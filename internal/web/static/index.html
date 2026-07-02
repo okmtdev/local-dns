@@ -3,32 +3,52 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>local-dns 管理画面</title>
+<title>local-dns // NETWORK CONTROL</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<canvas id="matrixCanvas" aria-hidden="true"></canvas>
+<div class="gridlayer" aria-hidden="true"></div>
+<div class="crt" aria-hidden="true"></div>
+
+<div id="boot" aria-hidden="true">
+  <pre id="bootLogo">
+ _     ___   ____    _    _          ____  _   _ ____
+| |   / _ \ / ___|  / \  | |        |  _ \| \ | / ___|
+| |  | | | | |     / _ \ | |   ____ | | | |  \| \___ \
+| |__| |_| | |___ / ___ \| |__|____|| |_| | |\  |___) |
+|_____\___/ \____/_/   \_\_____|    |____/|_| \_|____/</pre>
+  <div id="bootLines"></div>
+  <div class="boot-bar"><i id="bootProgress"></i></div>
+  <div class="boot-skip">CLICK TO SKIP</div>
+</div>
+
 <header>
   <div class="brand">
-    <span class="logo" aria-hidden="true">🏠</span>
-    <h1>local-dns</h1>
+    <span class="sig" aria-hidden="true"></span>
+    <h1 class="glitch" data-text="LOCAL-DNS">LOCAL-DNS</h1>
+    <span class="subtitle">NETWORK CONTROL CONSOLE</span>
     <span class="badge" id="domainBadge" title="管理ドメイン"></span>
+    <span class="admin-badge">● ADMIN</span>
   </div>
   <div class="header-right">
+    <div class="radar" id="radar" title="スキャナ稼働中" aria-hidden="true"></div>
     <span class="muted small">最終スキャン: <span id="lastScan">-</span></span>
     <button id="scanBtn" class="btn" type="button">今すぐスキャン</button>
   </div>
 </header>
 
 <main>
-  <section>
+  <section class="panel">
     <div class="section-head">
-      <h2>接続デバイス</h2>
+      <h2><span class="prompt">&gt;</span> 接続デバイス</h2>
+      <span class="en">// CONNECTED_NODES</span>
       <span class="muted" id="deviceSummary"></span>
     </div>
-    <p class="muted small">
-      ネットワーク上で検出された端末の一覧です。「＋ DNS名」で端末に名前を割り当てると、
-      IPアドレスが変わっても常に最新のIPへ名前解決されます(MACアドレスで追跡)。
+    <p class="muted small desc">
+      ネットワーク上で検出された端末の一覧。「＋ DNS名」で端末に名前を割り当てると、
+      IPアドレスが変わっても常に最新のIPへ名前解決されます (MACアドレスで追跡)。
     </p>
     <div class="table-wrap">
       <table>
@@ -49,9 +69,10 @@
     </div>
   </section>
 
-  <section>
+  <section class="panel">
     <div class="section-head">
-      <h2>DNSマッピング</h2>
+      <h2><span class="prompt">&gt;</span> DNSマッピング</h2>
+      <span class="en">// NAME_ASSIGNMENTS</span>
       <span class="muted" id="mappingSummary"></span>
     </div>
     <form id="mappingForm" class="mapping-form">

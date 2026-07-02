@@ -8,6 +8,11 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Rows animate in only on the very first render.
+let firstRenderDone = false;
+
 // ---- API ----
 
 async function api(path, options = {}) {
@@ -38,6 +43,12 @@ function el(tag, className, text) {
   return node;
 }
 
+function animateRow(tr, index) {
+  if (firstRenderDone || reducedMotion) return;
+  tr.classList.add("row-in");
+  tr.style.animationDelay = `${Math.min(index * 45, 500)}ms`;
+}
+
 function relativeTime(iso) {
   if (!iso) return "-";
   const t = new Date(iso).getTime();
@@ -55,7 +66,7 @@ function relativeTime(iso) {
 let toastTimer = null;
 function toast(message, isError = false) {
   const node = $("toast");
-  node.textContent = message;
+  node.textContent = (isError ? "[ERR] " : "[ OK ] ") + message;
   node.className = "toast" + (isError ? " error" : "");
   node.hidden = false;
   clearTimeout(toastTimer);
@@ -107,8 +118,9 @@ function renderDevices() {
     return;
   }
 
-  for (const d of state.devices) {
+  state.devices.forEach((d, i) => {
     const tr = el("tr");
+    animateRow(tr, i);
 
     const tdStatus = el("td");
     const dot = el("span", "dot" + (d.online ? " online" : ""));
@@ -172,7 +184,7 @@ function renderDevices() {
     tr.appendChild(tdActions);
 
     tbody.appendChild(tr);
-  }
+  });
 }
 
 async function deleteDevice(d) {
@@ -209,8 +221,9 @@ function renderMappings() {
     return;
   }
 
-  for (const m of state.mappings) {
+  state.mappings.forEach((m, i) => {
     const tr = el("tr");
+    animateRow(tr, i);
 
     const tdFqdn = el("td");
     const chip = el("span", "chip", m.fqdn);
@@ -252,7 +265,7 @@ function renderMappings() {
     tr.appendChild(tdActions);
 
     tbody.appendChild(tr);
-  }
+  });
 }
 
 async function deleteMapping(m) {
@@ -402,18 +415,30 @@ async function refresh() {
     ? relativeTime(status.last_scan)
     : "未実施";
   $("footerInfo").textContent =
-    `local-dns ${status.version} ・ DNS ${status.dns_listen} ・ ` +
+    `[SYS] local-dns ${status.version} ・ DNS ${status.dns_listen} ・ ` +
     `スキャン間隔 ${status.scan_interval_sec}秒 ・ TTL ${status.ttl}秒 ・ ` +
     `上流 ${status.upstreams.join(", ")}`;
 
   renderDevices();
   renderTargetSelect();
   renderMappings();
+  firstRenderDone = true;
 }
 
 async function triggerScan() {
   const btn = $("scanBtn");
+  const radar = $("radar");
   btn.disabled = true;
+  btn.classList.add("scanning");
+  radar.classList.add("fast");
+  const originalText = btn.textContent;
+  btn.textContent = "SCANNING…";
+  const restore = () => {
+    btn.disabled = false;
+    btn.classList.remove("scanning");
+    radar.classList.remove("fast");
+    btn.textContent = originalText;
+  };
   try {
     await api("/api/scan", { method: "POST" });
     toast("スキャンを開始しました…");
@@ -423,12 +448,111 @@ async function triggerScan() {
       } catch {
         /* keep old view */
       }
-      btn.disabled = false;
+      restore();
     }, 3500);
   } catch (err) {
     toast(err.message, true);
-    btn.disabled = false;
+    restore();
   }
+}
+
+// ---- matrix rain background ----
+
+function initMatrix() {
+  const canvas = $("matrixCanvas");
+  if (!canvas) return;
+  if (reducedMotion) {
+    canvas.remove();
+    return;
+  }
+  const ctx = canvas.getContext("2d");
+  const CHARS =
+    "アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789ABCDEF<>/:$#*+-";
+  const FONT = 14;
+  let width = 0;
+  let height = 0;
+  let drops = [];
+
+  function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    const cols = Math.ceil(width / FONT);
+    // Start columns at random heights so the effect is alive immediately.
+    drops = Array.from({ length: cols }, () =>
+      Math.floor(Math.random() * (height / FONT))
+    );
+    ctx.fillStyle = "#020705";
+    ctx.fillRect(0, 0, width, height);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // No document.hidden check needed: browsers pause rAF in hidden tabs.
+  let last = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (now - last < 60) return; // ~16fps is plenty
+    last = now;
+    ctx.fillStyle = "rgba(2, 7, 5, 0.14)"; // fading trails
+    ctx.fillRect(0, 0, width, height);
+    ctx.font = `${FONT}px monospace`;
+    for (let i = 0; i < drops.length; i++) {
+      const y = drops[i] * FONT;
+      if (y > 0) {
+        const ch = CHARS[(Math.random() * CHARS.length) | 0];
+        ctx.fillStyle = Math.random() < 0.06 ? "#b4ffe1" : "#00cc7a";
+        ctx.fillText(ch, i * FONT, y);
+      }
+      if (y > height && Math.random() > 0.975) {
+        drops[i] = Math.floor(Math.random() * -30);
+      } else {
+        drops[i]++;
+      }
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---- boot sequence ----
+
+async function bootSequence() {
+  const boot = $("boot");
+  if (!boot) return;
+  if (reducedMotion || sessionStorage.getItem("ldns-boot")) {
+    boot.remove();
+    return;
+  }
+  sessionStorage.setItem("ldns-boot", "1");
+
+  const lines = [
+    () => "> ESTABLISHING UPLINK ................ OK",
+    () => "> AUTHENTICATING OPERATOR ............ [ADMIN]",
+    () =>
+      `> LOADING DEVICE REGISTRY ............ ${
+        state.devices.length > 0 ? state.devices.length + " NODES" : "SYNCING"
+      }`,
+    () => "> DNS CORE ........................... ONLINE",
+    () => "> ACCESS GRANTED — ようこそ、管理者",
+  ];
+  const container = $("bootLines");
+  const bar = $("bootProgress");
+  let skipped = false;
+  boot.addEventListener("click", () => {
+    skipped = true;
+  });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  await sleep(250);
+  for (let i = 0; i < lines.length; i++) {
+    if (skipped) break;
+    const last = i === lines.length - 1;
+    const div = el("div", last ? "granted" : "ok", lines[i]());
+    container.appendChild(div);
+    bar.style.width = `${Math.round(((i + 1) / lines.length) * 100)}%`;
+    await sleep(last ? 500 : 260 + Math.random() * 160);
+  }
+  boot.classList.add("done");
+  setTimeout(() => boot.remove(), 600);
 }
 
 // ---- init ----
@@ -447,6 +571,8 @@ $("labelForm").addEventListener("submit", (e) => {
 });
 $("scanBtn").addEventListener("click", triggerScan);
 
+initMatrix();
+bootSequence();
 refresh().catch((err) => toast(err.message, true));
 setInterval(() => {
   refresh().catch(() => {

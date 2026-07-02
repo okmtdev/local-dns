@@ -12,6 +12,11 @@ living-tv.home.arpa → ...           (何台でも登録可能)
 
 ![Web UI スクリーンショット](docs/screenshot.png)
 
+管理画面は「ネットワーク管制コンソール」風のターミナル UI です。
+アクセス時にはブートシーケンス演出が流れます (クリックでスキップ可能)。
+
+![ブートシーケンス](docs/screenshot-boot.png)
+
 ## 特徴
 
 - **依存ゼロ・シングルバイナリ** — Go 標準ライブラリのみで実装。`local-dns` 1ファイルを置くだけで動作
@@ -21,7 +26,8 @@ living-tv.home.arpa → ...           (何台でも登録可能)
 - **フル機能の DNS サーバ** — 管理外の名前は上流 (Cloudflare/Google/ルーター等) へ転送するので、
   LAN の「メイン DNS」としてルーターから配布できます (EDNS/DNSSEC はそのまま素通し)
 - **Web 管理画面** — 接続端末の一覧 (IP / MAC / ホスト名 / ベンダー / オンライン状態) と、
-  DNS 名の割り当て・管理
+  DNS 名の割り当て・管理。ハッカー映画風のダークコンソール UI (マトリックス背景、
+  グリッチ演出、ブートシーケンス付き。`prefers-reduced-motion` 環境では自動的に簡略化)
 - **端末名の自動検出** — mDNS (Apple/Linux/Android) と NetBIOS (Windows) で端末のホスト名を自動取得
 - **CUI サーバ向け** — Ubuntu 上で systemd サービスとして常駐 (`DynamicUser` + 最小権限)
 
