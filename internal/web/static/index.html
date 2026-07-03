@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>local-dns // NETWORK CONTROL</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<canvas id="matrixCanvas" aria-hidden="true"></canvas>
+<div class="gridlayer" aria-hidden="true"></div>
+<div class="crt" aria-hidden="true"></div>
+
+<div id="boot" aria-hidden="true">
+  <pre id="bootLogo">
+ _     ___   ____    _    _          ____  _   _ ____
+| |   / _ \ / ___|  / \  | |        |  _ \| \ | / ___|
+| |  | | | | |     / _ \ | |   ____ | | | |  \| \___ \
+| |__| |_| | |___ / ___ \| |__|____|| |_| | |\  |___) |
+|_____\___/ \____/_/   \_\_____|    |____/|_| \_|____/</pre>
+  <div id="bootLines"></div>
+  <div class="boot-bar"><i id="bootProgress"></i></div>
+  <div class="boot-skip">CLICK TO SKIP</div>
+</div>
+
+<header>
+  <div class="brand">
+    <span class="sig" aria-hidden="true"></span>
+    <h1 class="glitch" data-text="LOCAL-DNS">LOCAL-DNS</h1>
+    <span class="subtitle">NETWORK CONTROL CONSOLE</span>
+    <span class="badge" id="domainBadge" title="管理ドメイン"></span>
+    <span class="admin-badge">● ADMIN</span>
+  </div>
+  <div class="header-right">
+    <div class="radar" id="radar" title="スキャナ稼働中" aria-hidden="true"></div>
+    <span class="muted small">最終スキャン: <span id="lastScan">-</span></span>
+    <button id="scanBtn" class="btn" type="button">今すぐスキャン</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="section-head">
+      <h2><span class="prompt">&gt;</span> 接続デバイス</h2>
+      <span class="en">// CONNECTED_NODES</span>
+      <span class="muted" id="deviceSummary"></span>
+    </div>
+    <p class="muted small desc">
+      ネットワーク上で検出された端末の一覧。「＋ DNS名」で端末に名前を割り当てると、
+      IPアドレスが変わっても常に最新のIPへ名前解決されます (MACアドレスで追跡)。
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-status">状態</th>
+            <th>デバイス</th>
+            <th>IPアドレス</th>
+            <th>MACアドレス</th>
+            <th>ベンダー</th>
+            <th>最終確認</th>
+            <th>DNS名</th>
+            <th class="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody id="devicesBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-head">
+      <h2><span class="prompt">&gt;</span> DNSマッピング</h2>
+      <span class="en">// NAME_ASSIGNMENTS</span>
+      <span class="muted" id="mappingSummary"></span>
+    </div>
+    <form id="mappingForm" class="mapping-form">
+      <div class="field">
+        <label for="mHostname">ホスト名</label>
+        <div class="hostname-input">
+          <input id="mHostname" name="hostname" placeholder="nas" autocomplete="off" required>
+          <span class="fqdn-suffix" id="fqdnSuffix"></span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="mTarget">割り当て先</label>
+        <select id="mTarget"></select>
+      </div>
+      <div class="field" id="staticIPField" hidden>
+        <label for="mStaticIP">固定IP</label>
+        <input id="mStaticIP" placeholder="192.168.1.50" autocomplete="off">
+      </div>
+      <div class="field grow">
+        <label for="mNote">メモ (任意)</label>
+        <input id="mNote" placeholder="リビングのNAS" autocomplete="off">
+      </div>
+      <button class="btn primary" type="submit">追加 / 更新</button>
+    </form>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>DNS名 (FQDN)</th>
+            <th>割り当て先</th>
+            <th>現在のIP</th>
+            <th class="col-status">状態</th>
+            <th>メモ</th>
+            <th class="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody id="mappingsBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="muted small" id="footerInfo"></footer>
+</main>
+
+<dialog id="assignDialog">
+  <form method="dialog" class="dialog-form" id="assignForm">
+    <h3>DNS名を割り当て</h3>
+    <p class="muted small" id="assignTarget"></p>
+    <label for="aHostname">ホスト名</label>
+    <div class="hostname-input">
+      <input id="aHostname" placeholder="nas" autocomplete="off">
+      <span class="fqdn-suffix assign-suffix"></span>
+    </div>
+    <label for="aNote">メモ (任意)</label>
+    <input id="aNote" placeholder="リビングのNAS" autocomplete="off">
+    <div class="dialog-actions">
+      <button class="btn" value="cancel">キャンセル</button>
+      <button class="btn primary" id="assignSubmit" value="ok">割り当てる</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="labelDialog">
+  <form method="dialog" class="dialog-form" id="labelForm">
+    <h3>デバイスのラベルを編集</h3>
+    <p class="muted small" id="labelTarget"></p>
+    <label for="lLabel">ラベル (空にすると削除)</label>
+    <input id="lLabel" placeholder="お父さんのノートPC" autocomplete="off">
+    <div class="dialog-actions">
+      <button class="btn" value="cancel">キャンセル</button>
+      <button class="btn primary" id="labelSubmit" value="ok">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# build artifacts
+/local-dns
+dist/
+*.test
+
+# local state / scratch
+state.json
+*.log
