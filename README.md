@@ -47,7 +47,7 @@ living-tv.home.arpa → ...           (何台でも登録可能)
            └───────┘    │  │  *.home.arpa → 台帳から現在のIPを応答│  │
                         │  │  それ以外    → 上流DNSへ転送         │  │
   管理画面 ┌───────┐    │  └────────────────────────────────────┘  │
-  ────────►│ :8080 ├────┼──► Web UI / JSON API                     │
+  ────────►│ :80   ├────┼──► Web UI / JSON API                     │
            └───────┘    └──────────────────────────────────────────┘
 ```
 
@@ -106,7 +106,7 @@ systemctl status local-dns
 
 ```bash
 dig @127.0.0.1 example.com +short      # 上流への転送が動くか
-curl -s http://127.0.0.1:8080/api/status | jq   # API が動くか
+curl -s http://127.0.0.1/api/status | jq        # API が動くか
 ```
 
 ### 3. LAN の端末にこの DNS を使わせる
@@ -123,7 +123,7 @@ local-dns を使い始めます。
 
 ## 使い方
 
-1. ブラウザで `http://<サーバのIP>:8080/` を開く
+1. ブラウザで `http://<サーバのIP>/` を開く
 2. 「接続デバイス」に LAN 上の端末が自動で並びます (初回スキャンは起動直後)
 3. 名前を付けたい端末の **「＋ DNS名」** を押してホスト名 (例: `nas`) を入力
 4. どの端末からでも `nas.home.arpa` でアクセスできるようになります
@@ -136,6 +136,8 @@ dig @192.168.1.2 nas.home.arpa +short
 - 端末には「ラベル」(例: お父さんのノートPC) を付けて一覧を見やすくできます
 - 1台の端末に複数の DNS 名を割り当て可能。登録台数に制限はありません
 - サーバや NAS など固定 IP の機器には「固定IPを直接指定…」でも登録できます
+- 登録済みマッピングは「編集」ボタンから、ホスト名の変更 (リネーム) も含めて
+  その場で変更できます
 - 「今すぐスキャン」で手動スキャンも可能です
 
 ### curl での操作 (CUI から使う場合)
@@ -144,20 +146,20 @@ Web UI と同じ操作は JSON API でも行えます:
 
 ```bash
 # デバイス一覧
-curl -s http://127.0.0.1:8080/api/devices | jq
+curl -s http://127.0.0.1/api/devices | jq
 
 # DNS名の割り当て (MAC 追跡)
-curl -s -X POST http://127.0.0.1:8080/api/mappings \
+curl -s -X POST http://127.0.0.1/api/mappings \
   -H 'Content-Type: application/json' \
   -d '{"hostname":"nas","mac":"aa:bb:cc:dd:ee:ff","note":"リビングのNAS"}'
 
 # 固定IPの登録
-curl -s -X POST http://127.0.0.1:8080/api/mappings \
+curl -s -X POST http://127.0.0.1/api/mappings \
   -H 'Content-Type: application/json' \
   -d '{"hostname":"printer","ip":"192.168.1.200"}'
 
 # 削除
-curl -s -X DELETE http://127.0.0.1:8080/api/mappings/nas
+curl -s -X DELETE http://127.0.0.1/api/mappings/nas
 ```
 
 ## 設定リファレンス
@@ -170,7 +172,7 @@ curl -s -X DELETE http://127.0.0.1:8080/api/mappings/nas
 | --- | --- | --- |
 | `domain` | `home.arpa` | 管理ドメイン。RFC 8375 の家庭用予約ドメイン。`lan` 等に変更可 |
 | `dns_listen` | `:53` | DNS 待ち受けアドレス (UDP/TCP) |
-| `web_listen` | `:8080` | Web UI / API 待ち受けアドレス |
+| `web_listen` | `:80` | Web UI / API 待ち受けアドレス (特権ポート。root か同梱 systemd ユニットが必要。一般ユーザー起動なら `:8080` 等に変更) |
 | `upstreams` | `1.1.1.1, 8.8.8.8` | 上流 DNS (カンマ区切り、順にフォールバック)。ルーター指定推奨 |
 | `ttl` | `30` | 管理レコードの TTL 秒 |
 | `answer_single_label` | `true` | `nas` のような単一ラベル問い合わせにも応答 |
@@ -195,7 +197,8 @@ curl -s -X DELETE http://127.0.0.1:8080/api/mappings/nas
 | `PATCH /api/devices/{mac}` | `{"label": "..."}` でラベル設定 (空文字で削除) |
 | `DELETE /api/devices/{mac}` | デバイスを台帳から削除 (再検出されれば復活) |
 | `GET /api/mappings` | DNS マッピング一覧 (現在の解決先 IP 付き) |
-| `POST /api/mappings` | `{"hostname","mac"または"ip","note"}` で作成/更新 |
+| `POST /api/mappings` | `{"hostname","mac"または"ip","note"}` で作成/更新 (同名は上書き) |
+| `PUT /api/mappings/{hostname}` | 既存マッピングの編集。ボディの `hostname` を変えるとリネーム (使用中の名前へは 400) |
 | `DELETE /api/mappings/{hostname}` | マッピング削除 |
 | `POST /api/scan` | 即時スキャンを要求 |
 | `GET /healthz` | ヘルスチェック |
@@ -226,6 +229,7 @@ curl -s -X DELETE http://127.0.0.1:8080/api/mappings/nas
 | 症状 | 対処 |
 | --- | --- |
 | `listen udp :53: bind: address already in use` | 上記「ポート 53 を空ける」を実施。`sudo ss -lunp 'sport = :53'` で使用者を確認 |
+| `listen tcp :80: bind: permission denied` | 80番は特権ポートです。同梱の systemd ユニット経由で起動するか、`web_listen: :8080` に変更 (他の Web サーバと同居する場合も同様) |
 | デバイスがほとんど出てこない | サブネット自動検出の失敗が考えられます。`scan_interface: eth0` や `scan_cidr: 192.168.1.0/24` を明示。`journalctl -u local-dns` にヒントが出ます |
 | ベンダー名が「-」のまま | `sudo apt install ieee-data` 後に再起動 |
 | 名前は引けるが端末がオフライン表示 | ファイアウォールで UDP を落とす端末でも ARP には応答するため通常は検出できます。Wi-Fi のスリープ中は検出されないことがあります (復帰後に再検出) |

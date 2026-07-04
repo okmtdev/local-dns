@@ -55,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/devices/{mac}", s.deleteDevice)
 	mux.HandleFunc("GET /api/mappings", s.getMappings)
 	mux.HandleFunc("POST /api/mappings", s.postMapping)
+	mux.HandleFunc("PUT /api/mappings/{hostname}", s.putMapping)
 	mux.HandleFunc("DELETE /api/mappings/{hostname}", s.deleteMapping)
 	mux.HandleFunc("POST /api/scan", s.postScan)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -280,6 +281,33 @@ func (s *Server) postMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("mapping saved", "hostname", m.Hostname, "mac", m.MAC, "ip", m.IP)
+	writeJSON(w, http.StatusOK, m)
+}
+
+// putMapping updates an existing mapping; the body may carry a new
+// hostname (rename), a new target, and a new note.
+func (s *Server) putMapping(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Hostname string `json:"hostname"`
+		MAC      string `json:"mac"`
+		IP       string `json:"ip"`
+		Note     string `json:"note"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	old := r.PathValue("hostname")
+	m, err := s.Store.UpdateMapping(old, body.Hostname, strings.TrimSpace(body.MAC), strings.TrimSpace(body.IP), body.Note)
+	if err != nil {
+		code := http.StatusBadRequest
+		if errors.Is(err, store.ErrMappingNotFound) {
+			code = http.StatusNotFound
+		}
+		writeError(w, code, err)
+		return
+	}
+	s.Log.Info("mapping updated", "from", old, "hostname", m.Hostname, "mac", m.MAC, "ip", m.IP)
 	writeJSON(w, http.StatusOK, m)
 }
 

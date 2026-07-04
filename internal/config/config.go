@@ -57,7 +57,7 @@ func Default() Config {
 	return Config{
 		Domain:            "home.arpa",
 		DNSListen:         ":53",
-		WebListen:         ":8080",
+		WebListen:         ":80",
 		Upstreams:         []string{"1.1.1.1:53", "8.8.8.8:53"},
 		TTL:               30,
 		ScanInterval:      30 * time.Second,

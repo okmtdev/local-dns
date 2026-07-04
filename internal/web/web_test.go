@@ -208,6 +208,49 @@ func TestDeviceAndMappingFlow(t *testing.T) {
 	}
 }
 
+func TestUpdateMappingAPI(t *testing.T) {
+	ts, st, _ := newTestServer(t, "", "")
+	st.ApplyScan([]store.SeenDevice{
+		{MAC: "aa:bb:cc:dd:ee:01", IP: "192.168.1.10"},
+	}, time.Now())
+	if _, err := st.SetMapping("nas", "aa:bb:cc:dd:ee:01", "", "before"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetMapping("printer", "", "192.168.1.200", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Rename + retarget + note change in one call.
+	res, body := doJSON(t, "PUT", ts.URL+"/api/mappings/nas", map[string]string{
+		"hostname": "Storage", "ip": "192.168.1.99", "note": "after",
+	})
+	if res.StatusCode != 200 {
+		t.Fatalf("put = %d %v", res.StatusCode, body)
+	}
+	if body["hostname"] != "storage" || body["ip"] != "192.168.1.99" || body["note"] != "after" {
+		t.Errorf("updated mapping = %v", body)
+	}
+	if _, found := st.ResolveName("nas"); found {
+		t.Error("old hostname still resolves")
+	}
+
+	// Updating a missing mapping is a 404.
+	res, _ = doJSON(t, "PUT", ts.URL+"/api/mappings/nas", map[string]string{
+		"hostname": "nas", "ip": "192.168.1.99",
+	})
+	if res.StatusCode != 404 {
+		t.Errorf("put missing = %d, want 404", res.StatusCode)
+	}
+
+	// Renaming onto a taken hostname is a 400.
+	res, body = doJSON(t, "PUT", ts.URL+"/api/mappings/storage", map[string]string{
+		"hostname": "printer", "ip": "192.168.1.99",
+	})
+	if res.StatusCode != 400 || body["error"] == "" {
+		t.Errorf("conflicting rename = %d %v", res.StatusCode, body)
+	}
+}
+
 func TestScanTrigger(t *testing.T) {
 	ts, _, sc := newTestServer(t, "", "")
 	res, body := doJSON(t, "POST", ts.URL+"/api/scan", nil)
