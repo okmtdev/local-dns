@@ -257,6 +257,10 @@ function renderMappings() {
 
     const tdActions = el("td");
     const actions = el("div", "actions");
+    const editBtn = el("button", "btn small", "編集");
+    editBtn.type = "button";
+    editBtn.addEventListener("click", () => openEditDialog(m));
+    actions.appendChild(editBtn);
     const delBtn = el("button", "btn small danger", "削除");
     delBtn.type = "button";
     delBtn.addEventListener("click", () => deleteMapping(m));
@@ -283,24 +287,38 @@ async function deleteMapping(m) {
 
 // ---- mapping form ----
 
-function renderTargetSelect() {
-  const select = $("mTarget");
-  const current = select.value;
+// fillTargetSelect populates a target <select> with the known devices
+// plus a "static IP" entry. extraMAC keeps a mapping's current target
+// selectable even when that device is not in the registry (anymore).
+function fillTargetSelect(select, selected, extraMAC) {
   select.textContent = "";
+  const known = new Set();
   for (const d of state.devices) {
     const opt = document.createElement("option");
     opt.value = `mac:${d.mac}`;
+    known.add(d.mac);
     const ip = d.ip ? ` (${d.ip})` : "";
     opt.textContent = `${d.display_name}${ip}`;
+    select.appendChild(opt);
+  }
+  if (extraMAC && !known.has(extraMAC)) {
+    const opt = document.createElement("option");
+    opt.value = `mac:${extraMAC}`;
+    opt.textContent = `${extraMAC} (未検出のデバイス)`;
     select.appendChild(opt);
   }
   const staticOpt = document.createElement("option");
   staticOpt.value = "static";
   staticOpt.textContent = "固定IPを直接指定…";
   select.appendChild(staticOpt);
-  if (current && [...select.options].some((o) => o.value === current)) {
-    select.value = current;
+  if (selected && [...select.options].some((o) => o.value === selected)) {
+    select.value = selected;
   }
+}
+
+function renderTargetSelect() {
+  const select = $("mTarget");
+  fillTargetSelect(select, select.value, null);
   $("staticIPField").hidden = select.value !== "static";
 }
 
@@ -363,6 +381,50 @@ async function submitAssign(event) {
     });
     toast(`${hostname}.${state.status.domain} を割り当てました`);
     $("assignDialog").close();
+    await refresh();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+let editOriginalHostname = null;
+
+function openEditDialog(m) {
+  editOriginalHostname = m.hostname;
+  $("editOriginal").textContent = `${m.fqdn} の設定を変更します`;
+  $("eHostname").value = m.hostname;
+  fillTargetSelect(
+    $("eTarget"),
+    m.static ? "static" : `mac:${m.mac}`,
+    m.static ? null : m.mac
+  );
+  $("eStaticIPField").hidden = !m.static;
+  $("eStaticIP").value = m.static ? m.ip : "";
+  $("eNote").value = m.note || "";
+  $("editDialog").showModal();
+  $("eHostname").focus();
+}
+
+async function submitEdit(event) {
+  event.preventDefault();
+  try {
+    const hostname = validateHostname($("eHostname").value);
+    const body = { hostname, note: $("eNote").value.trim() };
+    const target = $("eTarget").value;
+    if (!target) throw new Error("割り当て先を選択してください");
+    if (target === "static") {
+      const ip = $("eStaticIP").value.trim();
+      if (!ip) throw new Error("固定IPを入力してください");
+      body.ip = ip;
+    } else {
+      body.mac = target.slice(4);
+    }
+    await api(`/api/mappings/${encodeURIComponent(editOriginalHostname)}`, {
+      method: "PUT",
+      body,
+    });
+    toast(`${hostname}.${state.status.domain} を更新しました`);
+    $("editDialog").close();
     await refresh();
   } catch (err) {
     toast(err.message, true);
@@ -564,6 +626,13 @@ $("mTarget").addEventListener("change", () => {
 $("assignForm").addEventListener("submit", (e) => {
   if (e.submitter && e.submitter.value === "cancel") return;
   submitAssign(e);
+});
+$("editForm").addEventListener("submit", (e) => {
+  if (e.submitter && e.submitter.value === "cancel") return;
+  submitEdit(e);
+});
+$("eTarget").addEventListener("change", () => {
+  $("eStaticIPField").hidden = $("eTarget").value !== "static";
 });
 $("labelForm").addEventListener("submit", (e) => {
   if (e.submitter && e.submitter.value === "cancel") return;

@@ -142,7 +142,9 @@ func run(cfg config.Config, log *slog.Logger) error {
 	errCh := make(chan error, 1)
 	go func() {
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- fmt.Errorf("web server: %w", err)
+			errCh <- fmt.Errorf(
+				"web server failed to listen on %q: %w (hint: ports below 1024 need root or CAP_NET_BIND_SERVICE — use the bundled systemd unit, or set web_listen: :8080)",
+				cfg.WebListen, err)
 		}
 	}()
 	go sc.Run(ctx)

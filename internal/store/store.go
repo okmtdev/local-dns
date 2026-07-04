@@ -23,6 +23,10 @@ import (
 // move the file aside and retry with a fresh store.
 var ErrCorrupt = errors.New("state file is corrupted")
 
+// ErrMappingNotFound is returned when updating a mapping that does not
+// exist (lets the API answer 404 instead of 400).
+var ErrMappingNotFound = errors.New("マッピングが見つかりません")
+
 // Device is a host observed on the local network, keyed by MAC address.
 type Device struct {
 	MAC       string    `json:"mac"`
@@ -300,32 +304,43 @@ func (s *Store) DeleteDevice(mac string) error {
 	return s.saveLocked()
 }
 
-// SetMapping creates or updates a mapping and persists. Exactly one of
-// mac and ip must be non-empty.
-func (s *Store) SetMapping(hostname, mac, ip, note string) (Mapping, error) {
+// normalizeMappingInput validates the mapping fields shared by
+// SetMapping and UpdateMapping. Exactly one of mac and ip must be
+// non-empty.
+func normalizeMappingInput(hostname, mac, ip, note string) (string, string, string, string, error) {
 	hostname = names.Normalize(hostname)
 	if err := names.ValidateLabels(hostname); err != nil {
-		return Mapping{}, err
+		return "", "", "", "", err
 	}
 	if (mac == "") == (ip == "") {
-		return Mapping{}, fmt.Errorf("MACアドレスか固定IPのどちらか一方を指定してください")
+		return "", "", "", "", fmt.Errorf("MACアドレスか固定IPのどちらか一方を指定してください")
 	}
 	if mac != "" {
 		var err error
 		mac, err = names.NormalizeMAC(mac)
 		if err != nil {
-			return Mapping{}, err
+			return "", "", "", "", err
 		}
 	}
 	if ip != "" {
 		parsed := net.ParseIP(strings.TrimSpace(ip))
 		if parsed == nil {
-			return Mapping{}, fmt.Errorf("IPアドレスの形式が不正です: %q", ip)
+			return "", "", "", "", fmt.Errorf("IPアドレスの形式が不正です: %q", ip)
 		}
 		ip = parsed.String()
 	}
 	if len(note) > 200 {
-		return Mapping{}, fmt.Errorf("メモが長すぎます (200文字以内)")
+		return "", "", "", "", fmt.Errorf("メモが長すぎます (200文字以内)")
+	}
+	return hostname, mac, ip, strings.TrimSpace(note), nil
+}
+
+// SetMapping creates or updates a mapping and persists. Exactly one of
+// mac and ip must be non-empty.
+func (s *Store) SetMapping(hostname, mac, ip, note string) (Mapping, error) {
+	hostname, mac, ip, note, err := normalizeMappingInput(hostname, mac, ip, note)
+	if err != nil {
+		return Mapping{}, err
 	}
 	now := time.Now()
 	s.mu.Lock()
@@ -337,8 +352,41 @@ func (s *Store) SetMapping(hostname, mac, ip, note string) (Mapping, error) {
 	}
 	m.MAC = mac
 	m.IP = ip
-	m.Note = strings.TrimSpace(note)
+	m.Note = note
 	m.UpdatedAt = now
+	s.dirty = true
+	if err := s.saveLocked(); err != nil {
+		return *m, err
+	}
+	return *m, nil
+}
+
+// UpdateMapping modifies an existing mapping, including renaming it,
+// atomically. Renaming onto a hostname that is already taken fails.
+func (s *Store) UpdateMapping(oldHostname, hostname, mac, ip, note string) (Mapping, error) {
+	oldHostname = names.Normalize(oldHostname)
+	hostname, mac, ip, note, err := normalizeMappingInput(hostname, mac, ip, note)
+	if err != nil {
+		return Mapping{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.mappings[oldHostname]
+	if !ok {
+		return Mapping{}, fmt.Errorf("%w: %s", ErrMappingNotFound, oldHostname)
+	}
+	if hostname != oldHostname {
+		if _, taken := s.mappings[hostname]; taken {
+			return Mapping{}, fmt.Errorf("ホスト名 %q は既に使用されています", hostname)
+		}
+		delete(s.mappings, oldHostname)
+		m.Hostname = hostname
+		s.mappings[hostname] = m
+	}
+	m.MAC = mac
+	m.IP = ip
+	m.Note = note
+	m.UpdatedAt = time.Now()
 	s.dirty = true
 	if err := s.saveLocked(); err != nil {
 		return *m, err

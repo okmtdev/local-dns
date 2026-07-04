@@ -135,6 +135,30 @@
   </form>
 </dialog>
 
+<dialog id="editDialog">
+  <form method="dialog" class="dialog-form" id="editForm">
+    <h3>DNSマッピングを編集</h3>
+    <p class="muted small" id="editOriginal"></p>
+    <label for="eHostname">ホスト名</label>
+    <div class="hostname-input">
+      <input id="eHostname" autocomplete="off">
+      <span class="fqdn-suffix assign-suffix"></span>
+    </div>
+    <label for="eTarget">割り当て先</label>
+    <select id="eTarget"></select>
+    <div class="dialog-static" id="eStaticIPField" hidden>
+      <label for="eStaticIP">固定IP</label>
+      <input id="eStaticIP" placeholder="192.168.1.50" autocomplete="off">
+    </div>
+    <label for="eNote">メモ (任意)</label>
+    <input id="eNote" placeholder="リビングのNAS" autocomplete="off">
+    <div class="dialog-actions">
+      <button class="btn" value="cancel">キャンセル</button>
+      <button class="btn primary" id="editSubmit" value="ok">保存</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="labelDialog">
   <form method="dialog" class="dialog-form" id="labelForm">
     <h3>デバイスのラベルを編集</h3>

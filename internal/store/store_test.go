@@ -166,6 +166,77 @@ func TestMappingsAndResolve(t *testing.T) {
 	}
 }
 
+func TestUpdateMapping(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now()
+	s.ApplyScan([]SeenDevice{{MAC: "aa:bb:cc:dd:ee:01", IP: "192.168.1.10"}}, now)
+
+	created, err := s.SetMapping("nas", "aa:bb:cc:dd:ee:01", "", "old note")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetMapping("printer", "", "192.168.1.200", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Update in place (target + note change, MAC -> static IP).
+	m, err := s.UpdateMapping("nas", "nas", "", "192.168.1.99", "new note")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.IP != "192.168.1.99" || m.MAC != "" || m.Note != "new note" {
+		t.Errorf("updated = %+v", m)
+	}
+	if !m.CreatedAt.Equal(created.CreatedAt) {
+		t.Errorf("CreatedAt changed: %v -> %v", created.CreatedAt, m.CreatedAt)
+	}
+
+	// Rename.
+	m, err = s.UpdateMapping("nas", "storage", "aa:bb:cc:dd:ee:01", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Hostname != "storage" {
+		t.Errorf("renamed = %+v", m)
+	}
+	if _, found := s.ResolveName("nas"); found {
+		t.Error("old name still resolves after rename")
+	}
+	if ip, found := s.ResolveName("storage"); !found || !ip.Equal(net.ParseIP("192.168.1.10")) {
+		t.Errorf("storage -> %v, %v", ip, found)
+	}
+
+	// Rename onto a taken name fails and changes nothing.
+	if _, err := s.UpdateMapping("storage", "printer", "aa:bb:cc:dd:ee:01", "", ""); err == nil {
+		t.Error("rename onto taken hostname accepted")
+	}
+	if _, found := s.ResolveName("storage"); !found {
+		t.Error("failed rename must keep the original mapping")
+	}
+
+	// Unknown mapping -> ErrMappingNotFound.
+	if _, err := s.UpdateMapping("ghost", "ghost2", "", "1.2.3.4", ""); !errors.Is(err, ErrMappingNotFound) {
+		t.Errorf("update unknown = %v, want ErrMappingNotFound", err)
+	}
+
+	// Validation still applies.
+	if _, err := s.UpdateMapping("storage", "Bad Name", "", "1.2.3.4", ""); err == nil {
+		t.Error("invalid new hostname accepted")
+	}
+	if _, err := s.UpdateMapping("storage", "storage", "", "", ""); err == nil {
+		t.Error("missing target accepted")
+	}
+
+	// Persistence: rename survives a reload.
+	s2, err := Open(s.path, 90*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found := s2.ResolveName("storage"); !found {
+		t.Error("renamed mapping missing after reload")
+	}
+}
+
 func TestLabelsAndDeleteDevice(t *testing.T) {
 	s := newTestStore(t)
 	now := time.Now()
